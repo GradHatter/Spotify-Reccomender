@@ -4,10 +4,12 @@ import base64
 import pandas as pd
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
+from spotipy.oauth2 import SpotifyClientCredentials
 
 # Replace with your own Client ID and Client Secret
-CLIENT_ID = '52f7cfd2ef2c41f89685df88e3772f55'
-CLIENT_SECRET = 'de8f11bd0e51450cbff4ea897009eb14'
+CLIENT_ID = ''
+CLIENT_SECRET = ''
+SPOTIFY_REDIRECT_URI = 'http://example.com'
 
 # Base64 encode the client ID and client secret
 client_credentials = f"{CLIENT_ID}:{CLIENT_SECRET}"
@@ -36,7 +38,11 @@ else:
 
 def playlist_song_data(playlist_id, access_token):
     # Set up Spotipy with the access token
-    sp = spotipy.Spotify(auth=access_token)
+    #Authentication - without user
+    client_credentials_manager = SpotifyClientCredentials(client_id=CLIENT_ID,
+                                                          client_secret=CLIENT_SECRET)
+    sp = spotipy.Spotify(client_credentials_manager = client_credentials_manager)
+    #sp = spotipy.Spotify(auth=access_token)
 
     # Get the tracks from the playlist
     playlist_tracks = sp.playlist_tracks(playlist_id,
@@ -103,13 +109,13 @@ def playlist_song_data(playlist_id, access_token):
 
 #------------------------------------------------------------------------------
 
-playlist_id = '1bNZQV7Kjf5P8md4C3Xzey?si=a0b4facc21ac44ce'
+playlist_id = '1KW8SkrdDSSYzihEPZuMFJ'
 
 # Call the function to get the music data from the playlist and store it in a DataFrame
 music_df = playlist_song_data(playlist_id, access_token)
 
 #print(music_df.head())
 
-playlist_name = ""
+playlist_name = "playlist"
 
-df.to_csv(f"{playlist_name}.csv")
+music_df.to_csv(f"{playlist_name}.csv")
