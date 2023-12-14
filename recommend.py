@@ -176,7 +176,7 @@ similarity_matrix = pd.DataFrame(similarity_matrix,
 
 i = np.argmin(similarity_matrix)
 
-print(songs.iloc[i,:]["Track Name"])
+print(f"Worst song recommendation for this playlist: {songs.iloc[i,:]["Track Name"]}")
 
 j = np.argmax(similarity_matrix)
-print(songs.iloc[j,:]["Track Name"])
+print(f"Best song recommendation for this playlist: {songs.iloc[j,:]["Track Name"]}")
