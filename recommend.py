@@ -134,22 +134,22 @@ def prepare_songs(songs):
     songs["Duration (norm)"] = songs["Duration (ms)"]/300000 #No theoretical limit
     songs.replace({True : 0, False : 0}, inplace = True) #Replaces True/False in whole df but mainly for "Explicit"
     songs["Key"] = songs["Key"]/11 #There are 12 keys (0-11)
-    songs["Loudness"] = songs["Loudness"]/(-60) #No theoretical min or max, but typically from 0 to -60
+    songs["Loudness"] = songs["Loudness"]/(-60) #No theoretical min, but typically from 0 to -60
     songs["Tempo"] = songs["Tempo"]/200 #No theoretical limit
 
     #Split up date and "normalize"
     songs["Release Date"] = pd.to_datetime(songs["Release Date"])
-    songs["day"] = songs["Release Date"].dt.day/31
-    songs["month"] = songs["Release Date"].dt.month/12
-    songs["year"] = (songs["Release Date"].dt.year-1950)/70 #most songs will be from 0-1
+    #songs["day"] = songs["Release Date"].dt.day/31
+    #songs["month"] = songs["Release Date"].dt.month/12
+    songs["year"] = (songs["Release Date"].dt.year-1950)/70 #most songs will be from 1960-2020
 
-    song_data = songs.drop(columns = ["Release Date", "Duration (ms)", "External URLs",])
+    song_data = songs.drop(columns = ["Release Date", "Duration (ms)"])
 
     return song_data
 
 #--------------------------------------------------------------------------------------
 
-link = "https://open.spotify.com/playlist/3q5nKZCz7B6ih8ApUr9yo2?si=00c65d5a8c9c45bb"    
+link = "https://open.spotify.com/playlist/5EoxtzVO5gm2yN4V59G9ID?si=453aff2acecc424b"    
 
 playlist_id = get_playlist_id(link)
 
@@ -157,26 +157,46 @@ playlist_id = get_playlist_id(link)
 new_music_df = playlist_song_data(playlist_id, access_token)
 
 new_music_df = prepare_songs(new_music_df)
+#new_music_df = new_music_df.drop(columns = ["Album Name", "Album ID", "External URLs"])
+new_song_list = new_music_df['Track ID'].tolist()
 
 average_new_music = new_music_df.median(numeric_only = True)
+average_new_music['Key'] = new_music_df["Key"].mode()
 
-songs = pd.read_csv("songs.csv", index_col =0)
+song_data = pd.read_csv("song_data.csv", index_col =0)
+song_data = prepare_songs(song_data)
 
-song_data = prepare_songs(songs)
+song_data = song_data[song_data["Track ID"].isin(new_song_list) == False]
+song_data = song_data[song_data["Popularity"] >= .7]
+'''
+song_data = song_data.merge(song_data, new_music_df, indicator=True, how='outer')
+         .query('_merge=="left_only"')
+         .drop('_merge', axis=1))
+'''
+
 
 similarity_matrix = cosine_similarity(np.array(average_new_music).reshape(1,-1),
-                                        song_data.iloc[:,5:])
+                                        song_data.iloc[:,3:])
 
 '''
 similarity_matrix = pd.DataFrame(similarity_matrix,
-                                index = songs.iloc[:,:5],
-                                columns = songs.iloc[:,:5])
+                                index = song_data.iloc[:,3:],
+                                )
 '''
-#similarity_matrix.to_csv("score.csv")
+#Get the worst or least similar song
+worst_i = np.argmin(similarity_matrix)
+worst_rec = song_data.iloc[worst_i,:]["Track Name"]
+worst_rec_art = song_data.iloc[worst_i,:]["Artists"]
+worst_rec_id = song_data.iloc[worst_i,:]["Track ID"]
+print(f"The worst recommendation for this playlist is: {worst_rec} by {worst_rec_art}",
+ "\n",
+f"Track Link: https://open.spotify.com/track/{worst_rec_id}")
 
-i = np.argmin(similarity_matrix)
-
-print(f"Worst song recommendation for this playlist: {songs.iloc[i,:]["Track Name"]}")
-
-j = np.argmax(similarity_matrix)
-print(f"Best song recommendation for this playlist: {songs.iloc[j,:]["Track Name"]}")
+#Get the best or most similar song
+best_i = np.argmax(similarity_matrix)
+best_rec = song_data.iloc[best_i,:]["Track Name"]
+best_rec_art = song_data.iloc[best_i,:]["Artists"]
+best_rec_id = song_data.iloc[best_i,:]["Track ID"]
+print(f"The best recommendation for this playlist is: {best_rec} by {best_rec_art}",
+ "\n",
+f"Track Link: https://open.spotify.com/track/{best_rec_id}")
