@@ -9,9 +9,11 @@ import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 from spotipy.oauth2 import SpotifyClientCredentials
 
+#------------------------------------------------------------------------------
+
 # Replace with your own Client ID and Client Secret
-CLIENT_ID = ''
-CLIENT_SECRET = ''
+CLIENT_ID = '52f7cfd2ef2c41f89685df88e3772f55'
+CLIENT_SECRET = 'de8f11bd0e51450cbff4ea897009eb14'
 SPOTIFY_REDIRECT_URI = 'http://example.com'
 
 # Base64 encode the client ID and client secret
@@ -34,12 +36,13 @@ if response.status_code == 200:
 else:
     print("Error obtaining access token.")
     exit()
-    
+
+
 #------------------------------------------------------------------------------
 
 #Get song data from a playlist and turn it into a useable dataframe
 
-def playlist_song_data(playlist_id, access_token):
+def playlist_song_data(playlist_id, access_token, CLIENT_ID, CLIENT_SECRET):
     # Set up Spotipy with the access token
     #Authentication - without user
     client_credentials_manager = SpotifyClientCredentials(client_id=CLIENT_ID,
@@ -63,14 +66,14 @@ def playlist_song_data(playlist_id, access_token):
 
         # Get audio features for the track
         audio_features = sp.audio_features(track_id)[0] if track_id != 'Not available' else None
-
+        
         # Get release date of the album
         try:
             album_info = sp.album(album_id) if album_id != 'Not available' else None
             release_date = album_info['release_date'] if album_info else None
         except:
             release_date = None
-
+        
         # Get popularity of the track
         try:
             track_info = sp.track(track_id) if track_id != 'Not available' else None
@@ -112,6 +115,33 @@ def playlist_song_data(playlist_id, access_token):
 
 #------------------------------------------------------------------------------
 
+def prepare_songs(songs):
+    '''
+    input:
+    songs: dataframe
+
+    output:
+    song_data: dataframe
+    '''
+
+    #"Normalize" each variable to roughly 0-1 to reduce the effect of any one column
+    songs["Popularity"] = songs["Popularity"]/100 #Ranges from 0-100
+    songs["Duration (norm)"] = songs["Duration (ms)"]/300000 #No theoretical limit but mean time is 3.8 min
+    songs["Explicit"].replace({True : 0, False : 0}, inplace = True) #"Explicit" bool -> bianary numerical
+    songs["Key"] = songs["Key"]/11 #There are 12 keys (0-11)
+    songs["Loudness"] = songs["Loudness"]/(-60) #No theoretical min, but typically from 0 to -60
+    songs["Tempo"] = songs["Tempo"]/200 #No theoretical limit but most songs are 60-200 bpm
+
+    #Split up date and "normalize"
+    songs["Release Date"] = pd.to_datetime(songs["Release Date"])
+    #songs["day"] = songs["Release Date"].dt.day/31
+    #songs["month"] = songs["Release Date"].dt.month/12
+    songs["year"] = (songs["Release Date"].dt.year-1950)/70 #most songs are from 1950-2020
+
+    return songs
+
+#--------------------------------------------------------------------------------
+
 def get_playlist_id(link):
 
     link = link.split("/")[-1]
@@ -121,68 +151,49 @@ def get_playlist_id(link):
 
 #--------------------------------------------------------------------------------
 
-def prepare_songs(songs):
-    '''
-    input:
-    songs: dataframe
-
-    output:
-    song_data: dataframe
-    '''
-    #"Normalize" values for columns
-    songs["Popularity"] = songs["Popularity"]/100 #Ranges from 0-100
-    songs["Duration (norm)"] = songs["Duration (ms)"]/300000 #No theoretical limit
-    songs.replace({True : 0, False : 0}, inplace = True) #Replaces True/False in whole df but mainly for "Explicit"
-    songs["Key"] = songs["Key"]/11 #There are 12 keys (0-11)
-    songs["Loudness"] = songs["Loudness"]/(-60) #No theoretical min, but typically from 0 to -60
-    songs["Tempo"] = songs["Tempo"]/200 #No theoretical limit
-
-    #Split up date and "normalize"
-    songs["Release Date"] = pd.to_datetime(songs["Release Date"])
-    #songs["day"] = songs["Release Date"].dt.day/31
-    #songs["month"] = songs["Release Date"].dt.month/12
-    songs["year"] = (songs["Release Date"].dt.year-1950)/70 #most songs will be from 1960-2020
-
-    song_data = songs.drop(columns = ["Release Date", "Duration (ms)"])
-
-    return song_data
-
-#--------------------------------------------------------------------------------------
-
-link = "https://open.spotify.com/playlist/5EoxtzVO5gm2yN4V59G9ID?si=453aff2acecc424b"    
+link = "https://open.spotify.com/playlist/37i9dQZF1DX5KpP2LN299J?si=92fcc7134e5d4066"    
 
 playlist_id = get_playlist_id(link)
 
-# Call the function to get the music data from the playlist and store it in a DataFrame
-new_music_df = playlist_song_data(playlist_id, access_token)
+#Get the music data from the dataset and new playlist & preprocess them
+song_data_df = pd.read_csv("song_data.zip", compression = "zip", index_col =0)
+#song_data_df = pd.read_csv("song_data.csv", index_col =0)
+song_data = song_data_df.copy()
+#song_data = prepare_songs(song_data_df)
+song_data = song_data.drop(columns = ["Release Date", "Duration (ms)"])
 
-new_music_df = prepare_songs(new_music_df)
-#new_music_df = new_music_df.drop(columns = ["Album Name", "Album ID", "External URLs"])
-new_song_list = new_music_df['Track ID'].tolist()
+new_music_df = playlist_song_data(playlist_id, access_token, CLIENT_ID, CLIENT_SECRET)
+new_music_df = new_music_df.drop(columns = ["Album Name", "Album ID", "External URLs"])
+new_music = new_music_df.copy()
+new_music = prepare_songs(new_music_df)
+new_music = new_music.drop(columns = ["Release Date", "Duration (ms)"])
 
-average_new_music = new_music_df.median(numeric_only = True)
-average_new_music['Key'] = new_music_df["Key"].mode()
 
-song_data = pd.read_csv("song_data.csv", index_col =0)
-song_data = prepare_songs(song_data)
+#Get the average value for the playlist to get the best representation of the whole
+average_new_music = new_music.median(numeric_only = True)
+average_new_music['Key'] = new_music["Key"].mode() #Key is categorical not continuous
 
+#--------------------------------------------------------------------------------
+
+#Add parameters for recommendeding songs
+
+# Don't recommend songs already in the playlist
+new_song_list = new_music['Track ID'].tolist() #get IDs for songs on playlist
 song_data = song_data[song_data["Track ID"].isin(new_song_list) == False]
-song_data = song_data[song_data["Popularity"] >= .7]
-'''
-song_data = song_data.merge(song_data, new_music_df, indicator=True, how='outer')
-         .query('_merge=="left_only"')
-         .drop('_merge', axis=1))
-'''
 
+# Don't recommend incredibly obscure songs
+squal = 0.60 # squal >=0.60 reduces the recommendable songs to just over 17,000 songs
+song_data = song_data[song_data["Popularity"] >= squal]
 
+# Don't include "White Noise" tracks
+song_data = song_data[song_data["Danceability"] >= 0.1]
+
+#--------------------------------------------------------------------------------
+
+#compute the cosine similarity on the numerical values
 similarity_matrix = cosine_similarity(np.array(average_new_music).reshape(1,-1),
                                         song_data.iloc[:,3:])
 
-'''
-similarity_matrix = pd.DataFrame(similarity_matrix,
-                                index = song_data.iloc[:,3:],
-                                )
-'''
 #Get the worst or least similar song
 worst_i = np.argmin(similarity_matrix)
 worst_rec = song_data.iloc[worst_i,:]["Track Name"]
@@ -200,3 +211,27 @@ best_rec_id = song_data.iloc[best_i,:]["Track ID"]
 print(f"The best recommendation for this playlist is: {best_rec} by {best_rec_art}",
  "\n",
 f"Track Link: https://open.spotify.com/track/{best_rec_id}")
+
+#----------------------------------------------------------------------------------
+
+#Add new songs to dataset
+before = song_data_df.shape[0] #number of songs before new playlist is added
+
+dataset_IDs = song_data_df['Track ID'].tolist()
+
+new_music_df = new_music_df[new_music_df["Track ID"].isin(dataset_IDs) == False]
+total_song_data = pd.concat([song_data_df, new_music_df], ignore_index = True, axis = 0)
+total_song_data.dropna(axis = 0, inplace = True)
+
+#save dataset with new songs to zip file
+filename = 'song_data'
+compression_options = dict(method='zip', archive_name=f'{filename}.csv')
+total_song_data.to_csv(f'{filename}.zip', compression=compression_options)
+
+#Check how many new songs were added
+after = total_song_data.shape[0] #number of songs before new playlist is added
+added = after-before
+if added>0:
+    print(f"{added} new songs were added to the dataset!")
+else:
+    pass
